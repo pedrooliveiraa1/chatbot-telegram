@@ -1,0 +1,168 @@
+{
+  "name": "Bot de Clima no Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 300],
+      "webhookId": "b7e4c2a0-1111-4c3d-9e2f-000000000001"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f0000001-0000-4000-8000-000000000001",
+              "name": "queue",
+              "value": "={{ ($json.message.text || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim().replace(/\\s*,\\s*/g, ',').replace(/\\s+/g, ' ') }}",
+              "type": "string"
+            },
+            {
+              "id": "f0000001-0000-4000-8000-000000000002",
+              "name": "chatId",
+              "value": "={{ $json.message.chat.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "Normalizar entrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openweathermap.org/data/2.5/weather",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q", "value": "={{ $json.queue }}" },
+            { "name": "units", "value": "metric" },
+            { "name": "lang", "value": "pt_br" },
+            { "name": "appid", "value": "={{ $env.OPENWEATHER_API_KEY }}" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "name": "Consultar OpenWeather",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c0000001-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": { "type": "number", "operation": "equals" }
+            },
+            {
+              "id": "c0000001-0000-4000-8000-000000000002",
+              "leftValue": "={{ $json.body.main.temp }}",
+              "rightValue": "",
+              "operator": { "type": "number", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "name": "Resposta valida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai a temperatura do JSON da OpenWeather e monta a mensagem final.\n// Este no e deterministico: sempre gera a mesma saida para a mesma entrada.\nconst body = $input.first().json.body;\nconst temperatura = Math.round(body.main.temp);\nconst cidade = body.name;\nconst chatId = $('Normalizar entrada').first().json.chatId;\n\nreturn [{\n  json: {\n    ok: true,\n    message: `🌤️ A temperatura em ${cidade} é de ${temperatura}°C.`,\n    chatId\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0005-4000-8000-000000000005",
+      "name": "Formatar mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a1b2c3d4-0006-4000-8000-000000000006",
+      "name": "Enviar temperatura",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, 200],
+      "webhookId": "b7e4c2a0-1111-4c3d-9e2f-000000000002"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Normalizar entrada').first().json.chatId }}",
+        "text": "❌ Cidade não encontrada. Use o formato Cidade,UF,BR (ex.: São Paulo,SP,BR).",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a1b2c3d4-0007-4000-8000-000000000007",
+      "name": "Enviar erro",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [880, 420],
+      "webhookId": "b7e4c2a0-1111-4c3d-9e2f-000000000003"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [[{ "node": "Normalizar entrada", "type": "main", "index": 0 }]]
+    },
+    "Normalizar entrada": {
+      "main": [[{ "node": "Consultar OpenWeather", "type": "main", "index": 0 }]]
+    },
+    "Consultar OpenWeather": {
+      "main": [[{ "node": "Resposta valida?", "type": "main", "index": 0 }]]
+    },
+    "Resposta valida?": {
+      "main": [
+        [{ "node": "Formatar mensagem", "type": "main", "index": 0 }],
+        [{ "node": "Enviar erro", "type": "main", "index": 0 }]
+      ]
+    },
+    "Formatar mensagem": {
+      "main": [[{ "node": "Enviar temperatura", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
