@@ -1,125 +1,47 @@
-# Bot de Clima no Telegram com N8N
+# chatbot-telegram
 
-Chatbot no Telegram que informa a temperatura atual de qualquer cidade do Brasil. O usuário envia o nome da cidade e do estado, o workflow consulta a API gratuita da OpenWeather e responde com uma mensagem curta e amigável.
+Bot de clima no Telegram feito com n8n para o desafio da disciplina de Agentes e Automação.
 
-Exemplo de conversa:
-
-```
-Usuário: Belo Horizonte,MG,BR
-Bot:     🌤️ A temperatura em Belo Horizonte é de 25°C.
-```
-
-## Como o workflow funciona
+A ideia é simples: você manda a cidade no formato `Cidade,UF,BR` e o bot responde com a temperatura atual usando a API da OpenWeather.
 
 ```
-Telegram Trigger > Normalizar entrada > Consultar OpenWeather > Resposta valida?
-                                                                  ├ sim > Formatar mensagem > Enviar temperatura
-                                                                  └ não > Enviar erro
+Fortaleza,CE,BR
+🌤️ A temperatura em Fortaleza é de 29°C.
 ```
 
-| Nó | Tipo | O que faz |
-|---|---|---|
-| Telegram Trigger | Telegram Trigger | Recebe as mensagens de texto enviadas ao bot |
-| Normalizar entrada | Set | Cria a variável `queue` com o texto sem acentos, em minúsculas, sem espaços sobrando (ex.: `São Paulo , SP , BR` vira `sao paulo,sp,br`) e guarda o `chatId` |
-| Consultar OpenWeather | HTTP Request | Chama `https://api.openweathermap.org/data/2.5/weather` com Send Query Parameters ativado |
-| Resposta valida? | IF | Confere se o status HTTP é 200 e se o JSON tem o campo `main.temp` |
-| Formatar mensagem | Code | Extrai a temperatura, arredonda e monta a frase final (lógica determinística) |
-| Enviar temperatura | Telegram (Send Message) | Envia a temperatura ao usuário |
-| Enviar erro | Telegram (Send Message) | Envia a mensagem de cidade não encontrada |
+## Como funciona
 
-### Parâmetros enviados à OpenWeather
+O fluxo recebe a mensagem pelo Telegram Trigger e passa o texto por um Set (Normalizar entrada), que tira acentos, deixa tudo minúsculo e limpa os espaços. Esse texto vai para a variável `queue`.
 
-| Parâmetro | Valor | Função |
-|---|---|---|
-| `q` | `{{ $json.queue }}` | Cidade formatada (vem da variável `queue`) |
-| `units` | `metric` | Temperatura em graus Celsius |
-| `lang` | `pt_br` | Respostas em português do Brasil |
-| `appid` | `{{ $env.OPENWEATHER_API_KEY }}` | Chave da API lida da variável de ambiente |
+Depois o HTTP Request chama a API da OpenWeather (`/data/2.5/weather`) com `units=metric` e `lang=pt_br`. A chave da API vem da variável de ambiente pelo `{{ $env.OPENWEATHER_API_KEY }}`.
 
-> Observação: o enunciado chama a cidade formatada de `queue`, e esse é o nome da variável criada no nó Set. Porém a OpenWeather só reconhece o parâmetro com o nome `q`. Por isso o parâmetro enviado se chama `q` e recebe o valor de `queue`. Se o nome do parâmetro fosse `queue`, a API responderia erro 400.
+Obs: a API só aceita o parâmetro com o nome `q`, então mandei o valor da `queue` dentro dele.
 
-## Variáveis esperadas
-
-| Variável | Onde é usada |
-|---|---|
-| `OPENWEATHER_API_KEY` | Variável de ambiente do n8n, lida no nó HTTP Request pela expressão `{{ $env.OPENWEATHER_API_KEY }}` |
-| `TELEGRAM_BOT_TOKEN` | Token gerado pelo @BotFather, cadastrado no n8n como credencial do tipo **Telegram API** |
-
-Nenhuma chave ou token está salvo neste repositório.
-
-## Pré-requisitos
-
-1. **Bot no Telegram:** no Telegram, procure @BotFather, envie `/newbot`, escolha nome e usuário (terminando em `bot`) e guarde o token.
-2. **Chave da OpenWeather:** crie uma conta em https://home.openweathermap.org/users/sign_up e copie sua chave em https://home.openweathermap.org/api_keys. Chaves novas podem levar até 2 horas para ativar.
-3. **Docker** instalado (para rodar o n8n localmente).
-4. **URL pública HTTPS:** o Telegram só envia mensagens para endereços públicos. Localmente, use o ngrok (`ngrok http 5678`) e copie a URL gerada.
-
-## Como rodar o n8n com Docker
-
-1. Na pasta do projeto, crie um arquivo `.env` (ele está no `.gitignore` e não vai para o GitHub):
+Um IF confere se a resposta veio com status 200 e com a temperatura. Se sim, um Code node arredonda a temperatura e monta a mensagem. Se não, o bot manda a mensagem de erro:
 
 ```
-OPENWEATHER_API_KEY=sua_chave_da_openweather
-WEBHOOK_URL=https://seu-endereco.ngrok-free.app/
+❌ Cidade não encontrada. Usar o formato Cidade,UF,BR (ex.: São Paulo,SP,BR).
 ```
 
-2. Suba o n8n:
+## Variáveis
 
-```bash
-docker compose up -d
-```
+- `OPENWEATHER_API_KEY`: chave da OpenWeather (pega em openweathermap.org)
+- `TELEGRAM_BOT_TOKEN`: token do bot gerado no @BotFather
 
-3. Acesse http://localhost:5678 e crie seu usuário.
+Nenhuma chave está no repositório.
 
-O `docker-compose.yml` já define `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`, que libera o uso de `$env` dentro dos nós.
+## Como usar
 
-> No n8n Cloud não é possível criar variáveis de ambiente próprias, então a expressão `$env.OPENWEATHER_API_KEY` não funciona lá. Use o n8n com Docker.
+1. Importe o `workflow-chatbot-telegram.json` no n8n (Create Workflow > menu de 3 pontos > Import from File)
+2. No nó Telegram Trigger crie uma credencial Telegram API e cole o `TELEGRAM_BOT_TOKEN`. Selecione a mesma credencial nos nós Enviar temperatura e Enviar erro
+3. Configure a `OPENWEATHER_API_KEY` como variável de ambiente do n8n. Deixei um `docker-compose.yml` caso queira rodar com Docker (ele já libera o uso do `$env` com `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`)
+4. Salve e ative o workflow
 
-## Como importar o workflow
+Lembrando que o Telegram precisa de uma URL https pública pro webhook funcionar, então rodando local precisa de algo tipo ngrok.
 
-1. No n8n, clique em **Create Workflow**.
-2. No menu de três pontos (canto superior direito), escolha **Import from File**.
-3. Selecione `workflow-chatbot-telegram.json`.
+## Testes
 
-## Como inserir as credenciais
-
-**Telegram (`TELEGRAM_BOT_TOKEN`)**
-1. Abra o nó **Telegram Trigger**.
-2. Em Credential, clique em **Create New Credential**.
-3. Cole o token do BotFather no campo **Access Token** e salve.
-4. Abra os nós **Enviar temperatura** e **Enviar erro** e selecione essa mesma credencial.
-
-**OpenWeather (`OPENWEATHER_API_KEY`)**
-Não há credencial a criar no n8n: a chave é lida do arquivo `.env` pelo Docker. Basta preencher o `.env` e reiniciar o container (`docker compose restart`).
-
-## Como executar e testar
-
-1. Clique em **Save** e depois ative o workflow (chave **Active** no topo).
-2. No Telegram, abra o seu bot e envie mensagens de teste:
-
-| Mensagem enviada | Retorno esperado |
-|---|---|
-| `Fortaleza,CE,BR` | `🌤️ A temperatura em Fortaleza é de XX°C.` |
-| `São Paulo,SP,BR` | `🌤️ A temperatura em São Paulo é de XX°C.` |
-| `Belo Horizonte,MG,BR` | `🌤️ A temperatura em Belo Horizonte é de XX°C.` |
-| `Cidadequenaoexiste,XX,BR` | `❌ Cidade não encontrada. Use o formato Cidade,UF,BR (ex.: São Paulo,SP,BR).` |
-
-Também funciona sem acento ou com letras misturadas, como `sao paulo,sp,br` ou `FORTALEZA, CE, BR`.
-
-## Problemas comuns
-
-| Sintoma | Causa provável |
-|---|---|
-| Toda cidade retorna erro | Chave da OpenWeather ainda não ativada ou `.env` não carregado |
-| Erro de acesso a `$env` | Falta `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` no ambiente |
-| Bot não responde | Workflow não está ativo ou `WEBHOOK_URL` não é uma URL HTTPS pública |
-
-## Estrutura do repositório
-
-```
-chatbot-telegram/
-├── workflow-chatbot-telegram.json
-├── README.md
-├── docker-compose.yml
-└── .gitignore
-```
+- `Fortaleza,CE,BR`
+- `São Paulo,SP,BR`
+- `Belo Horizonte,MG,BR`
+- `Cidadeinventada,XX,BR` (deve cair na mensagem de erro)
